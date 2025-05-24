@@ -27,10 +27,10 @@ str(SeoulBike)
 # (1) Date: 문자 -> Date 유형
 SeoulBike$Date <- as.Date(SeoulBike$Date, format = "%d/%m/%Y")
 
-# (2) Holiday: "No Holiday"→0, "Holiday"→1
+# (2) Holiday: "No Holiday" -> 0, "Holiday" -> 1
 SeoulBike$Holiday <- ifelse(SeoulBike$Holiday == "No Holiday", 0, 1)
 
-# (3) FunctioningDay: "Yes"→1, "No"→0
+# (3) FunctioningDay: "Yes" -> 1, "No" -> 0
 SeoulBike$FunctioningDay <- ifelse(SeoulBike$FunctioningDay == "Yes", 1, 0)
 
 str(SeoulBike)
@@ -49,15 +49,15 @@ Bike2 <- subset(SeoulBike, select = -c(Dew, FunctioningDay))
 str(Bike2)
 
 ## 6. 연구 가설 세우기 (Question 6)
-# Temp (+): 온도 상승 → 대여량 증가
-# Humidity (-): 습도 상승 → 대여량 감소
-# WindSp (-): 풍속 증가 → 대여량 감소
-# Visibility (+): 가시거리 증가 → 대여량 증가
-# Solar (+): 일사량 증가 → 대여량 증가
-# Rain (-): 비 증가 → 대여량 감소
-# Snow (-): 눈 증가 → 대여량 감소
-# Hour: 출퇴근 시간대(7-9시, 17-19시) → 대여량 증가
-# Holiday (+): 공휴일 → 대여량 증가 예상
+# Temp (+): 온도 상승 -> 대여량 증가
+# Humidity (-): 습도 상승 -> 대여량 감소
+# WindSp (-): 풍속 증가 -> 대여량 감소
+# Visibility (+): 가시거리 증가 -> 대여량 증가
+# Solar (+): 일사량 증가 -> 대여량 증가
+# Rain (-): 비 증가 -> 대여량 감소
+# Snow (-): 눈 증가 -> 대여량 감소
+# Hour: 출퇴근 시간대(7-9시, 17-19시) -> 대여량 증가
+# Holiday (+): 공휴일 -> 대여량 증가 예상
 
 ## Question 7. 다중선형회귀모델 적합
 lm_model <- lm(
@@ -92,6 +92,7 @@ ggplot(Bike2, aes(x = Rented, y = pred)) +
     x = "actual",
     y = "pred"
   )
+
 ## Question 10. 중간평가 및 해석
 # (1) 변수별 해석
 # - Temp(양의 관계): 온도가 올라가면 대여량 증가
