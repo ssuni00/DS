@@ -118,38 +118,61 @@ Bike2$HourF <- factor(Bike2$Hour)
 Bike2$Month <- as.factor(format(SeoulBike$Date, "%m"))
 Bike2$Weekday <- as.factor(weekdays(SeoulBike$Date))
 
-# (3) 개선된 회귀 모델 적합 (비선형항 + 교호작용 + 월/요일)
-lm_model2 <- lm(
+# (3) 분석에 사용할 데이터 구성
+Bike2 <- subset(SeoulBike, select = -c(Dew, FunctioningDay))
+
+# (4) 시간, 월, 요일 변수 생성
+Bike2$HourF <- factor(Bike2$Hour)
+Bike2$Month <- as.factor(format(SeoulBike$Date, "%m"))
+Bike2$Weekday <- as.factor(weekdays(SeoulBike$Date))
+
+# (5) 계절 변수 생성
+Bike2$MonthNum <- as.numeric(format(SeoulBike$Date, "%m"))
+Bike2$Season <- ifelse(Bike2$MonthNum %in% c(3,4,5), "spring",
+                       ifelse(Bike2$MonthNum %in% c(6,7,8), "summer",
+                              ifelse(Bike2$MonthNum %in% c(9,10,11), "fall", "winter")))
+Bike2$SeasonF <- as.factor(Bike2$Season)
+
+# (6) 출근 시간대 변수 생성
+Sys.setlocale("LC_TIME", "C")  # 요일 영어로 변환
+Bike2$Weekday <- weekdays(Bike2$Date)
+work_days <- c("Monday", "Tuesday", "Wednesday", "Thursday", "Friday")
+Bike2$Holiday <- ifelse(Bike2$Holiday == 0, "No", "Yes")
+Bike2$RushHour <- with(Bike2, ifelse(
+  Holiday == "No" & Weekday %in% work_days & Hour >= 7 & Hour <= 9,
+  "Yes", "No"))
+Bike2$RushHour <- factor(Bike2$RushHour)
+
+# (7) 개선된 회귀 모델 적합 (비선형항 + 교호작용 + 계절/요일/출근시간 포함)
+lm_model3 <- lm(
   Rented ~ Temp + I(Temp^2) + Humidity + I(Humidity^2) +
     WindSp + Visibility + Solar + Rain + Snow + Holiday +
     HourF + Temp:HourF + Visibility:HourF + Rain:Holiday +
-    Month + Weekday,
+    Month + Weekday + SeasonF + RushHour +
+    Rain:HourF + Holiday:Weekday + Humidity:SeasonF,
   data = Bike2
 )
 
-# (4) 모델 성능 평가
-Bike2$pred2 <- predict(lm_model2, Bike2)
-rmse2 <- sqrt(mean((Bike2$Rented - Bike2$pred2)^2))
-r2_2 <- summary(lm_model2)$r.squared
-adj_r2_2 <- summary(lm_model2)$adj.r.squared
+# (8) 모델 성능 평가
+Bike2$pred3 <- predict(lm_model3, Bike2)
+rmse3 <- sqrt(mean((Bike2$Rented - Bike2$pred3)^2))
+r2_3 <- summary(lm_model3)$r.squared
+adj_r2_3 <- summary(lm_model3)$adj.r.squared
 
-cat("개선 모델 RMSE:", round(rmse2, 2), "\n")
-cat("개선 모델 R2:", round(r2_2, 4), "\n")
-cat("개선 모델 Adjusted R2:", round(adj_r2_2, 4), "\n")
+cat("최종 모델 RMSE:", round(rmse3, 2), "\n")
+cat("최종 모델 R²:", round(r2_3, 4), "\n")
+cat("최종 모델 Adjusted R²:", round(adj_r2_3, 4), "\n")
 
-# (5) 다중공선성 확인
-library(car)
-vif_values2 <- vif(lm_model2, type = "predictor")
-print(vif_values2)
+# (9) 다중공선성 확인
+vif_values3 <- vif(lm_model3)
+print(vif_values3)
 
-
-# (6) 시각화: 실제 대여량 vs 예측 대여량
-library(ggplot2)
-ggplot(Bike2, aes(x = Rented, y = pred2)) +
+# (10) 시각화: 실제 대여량 vs 예측 대여량
+ggplot(Bike2, aes(x = Rented, y = pred3)) +
   geom_point(alpha = 0.4) +
-  geom_abline(slope = 1, intercept = 0, color = "blue") +
+  geom_abline(slope = 1, intercept = 0, color = "purple") +
   labs(
-    title = "개선 모델: 실제 대여량 vs 예측 대여량",
+    title = "최종 모델: 실제 대여량 vs 예측 대여량",
     x = "실제 대여량",
     y = "예측 대여량"
   )
