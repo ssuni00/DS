@@ -1,9 +1,11 @@
-## 1. 데이터 불러오기 및 특성 파악 (Question 1)
+## Data Science 01분반 Team 4 HW 11 ##
+
+## Question 1. 데이터 불러오기 및 특성 파악
 SeoulBike<- read.csv("SeoulBikeData.csv")
 str(SeoulBike)
 summary(SeoulBike)
 
-## 2. 변수 이름 수정 (Question 2)
+## Question 2. 변수 이름 수정
 names(SeoulBike) <- c(
   "Date",          # 날짜
   "Rented",        # 대여량
@@ -21,7 +23,7 @@ names(SeoulBike) <- c(
 )
 str(SeoulBike)
 
-## 3. 데이터 타입 변환 (Question 3)
+## Question 3. 데이터 타입 변환 
 # (1) Date: 문자 -> Date 유형
 SeoulBike$Date <- as.Date(SeoulBike$Date, format = "%d/%m/%Y")
 
@@ -33,7 +35,7 @@ SeoulBike$FunctioningDay <- ifelse(SeoulBike$FunctioningDay == "Yes", 1, 0)
 
 str(SeoulBike)
 
-## 4. 불필요 변수 선정 (Question 4)
+## Question 4. 불필요 변수 선정 
 # Dew: 온도(Temp), 습도(Humidity)와 강한 다중공선성(중복 정보) 존재
 # FunctioningDay: 값의 분산이 매우 낮아 정보 가치 없음
 
@@ -42,7 +44,7 @@ library(car)
 lm_initial <- lm(Rented ~ Hour + Temp + Humidity + WindSp + Visibility + Dew + Solar + Rain + Snow + Holiday + FunctioningDay, data = SeoulBike)
 vif(lm_initial) # Dew 값 매우 높음(VIF > 10 예상), FunctioningDay 분산 낮음(거의 1)
 
-## 5. 불필요 변수 제거 (Question 5)
+## Question 5. 불필요 변수 제거 
 Bike2 <- subset(SeoulBike, select = -c(Dew, FunctioningDay))
 str(Bike2)
 
@@ -57,24 +59,24 @@ str(Bike2)
 # Hour: 출퇴근 시간대(7-9시, 17-19시) → 대여량 증가
 # Holiday (+): 공휴일 → 대여량 증가 예상
 
-## 7. 다중선형회귀모델 적합 (Question 7)
+## Question 7. 다중선형회귀모델 적합
 lm_model <- lm(
   Rented ~ Hour + Temp + Humidity + WindSp + Visibility + Solar + Rain + Snow + Holiday,
   data = Bike2
 )
 summary(lm_model)
 
-## 8. 다중공선성 재확인 (Question 8)
+## Question 8. 다중공선성 재확인
 vif_values <- vif(lm_model)
 print(vif_values)
 
-## 9. 모델 성능 확인 및 시각화 (Question 9)
+## Question 9. 모델 성능 확인 및 시각화
 # (1) RMSE 계산
 Bike2$pred <- predict(lm_model, Bike2)
 rmse <- sqrt(mean((Bike2$Rented - Bike2$pred)^2))
 cat("RMSE:", round(rmse, 2), "\n")
 
-# (2) 결정계수(R²), 조정된 R² 계산
+# (2) 결정계수(R2), 조정된 R2 계산
 r2 <- summary(lm_model)$r.squared
 adj_r2 <- summary(lm_model)$adj.r.squared
 cat("R2:", round(r2, 4), "\n")
@@ -90,8 +92,7 @@ ggplot(Bike2, aes(x = Rented, y = pred)) +
     x = "actual",
     y = "pred"
   )
-## 10. 중간평가 및 해석 (수정 버전)
-
+## Question 10. 중간평가 및 해석
 # (1) 변수별 해석
 # - Temp(양의 관계): 온도가 올라가면 대여량 증가
 # - Rain(음의 관계): 비가 오면 대여량 감소
@@ -105,11 +106,11 @@ ggplot(Bike2, aes(x = Rented, y = pred)) +
 # - RMSE는 약 450~470 수준으로, 다소 높은 편
 
 # (3) 결론 및 추가 분석 제안
-# 계절성(요일, 월 등 날짜 변수)을 추가하면 성능이 더 개선될 수 있음.
-# 다항항(Temp^2 등), 교호작용(Temp*Hour 등)을 추가하면 추가 성능 향상 가능.
-# 잔차분석을 통한 정규성, 등분산성 진단이 권장됨.
+# 계절성(요일, 월 등 날짜 변수)을 추가하면 성능이 더 개선될 수 있음
+# 다항항(Temp^2 등), 교호작용(Temp*Hour 등)을 추가하면 추가 성능 향상 가능
+# 잔차분석을 통한 정규성, 등분산성 진단이 권장됨
 
-## 11. 성능 향상 모델 구축
+## Question 11. 성능 향상 모델 구축
 # 1. 변수 전처리 및 파생 변수 생성 (유지)
 Bike2 <- subset(SeoulBike, select = -c(Dew, FunctioningDay))
 Bike2$HourF <- factor(Bike2$Hour)
@@ -122,7 +123,7 @@ Bike2$Season <- ifelse(Bike2$MonthNum %in% c(3,4,5), "spring",
 Bike2$SeasonF <- as.factor(Bike2$Season)
 
 day_names <- weekdays(Bike2$Date)
-if (all(grepl("[가-힣]", day_names))) {
+if (all(grepl("[ㄱ-ㅎ]", day_names))) {
   work_days <- c("월요일", "화요일", "수요일", "목요일", "금요일")
 } else {
   Sys.setlocale("LC_TIME", "C")
@@ -163,8 +164,8 @@ lm_clean <- lm(
 # 4. 예측 및 평가
 Bike2_clean$pred_clean <- predict(lm_clean, newdata = Bike2_clean)
 cat("RMSE:", round(sqrt(mean((Bike2_clean$Rented - Bike2_clean$pred_clean)^2)), 2), "\n")
-cat("R2", round(summary(lm_clean)$r.squared, 4), "\n")
-cat("Adjusted R²:", round(summary(lm_clean)$adj.r.squared, 4), "\n")
+cat("R2:", round(summary(lm_clean)$r.squared, 4), "\n")
+cat("Adjusted R2:", round(summary(lm_clean)$adj.r.squared, 4), "\n")
 
 # 5. 시각화
 library(ggplot2)
