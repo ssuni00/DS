@@ -110,69 +110,82 @@ ggplot(Bike2, aes(x = Rented, y = pred)) +
 # 잔차분석을 통한 정규성, 등분산성 진단이 권장됨.
 
 ## 11. 성능 향상 모델 구축 (Question 11 – 개선 모델)
-# Question 11 (업데이트 버전)
-
-# 0. 파생 변수 생성
-Bike2$HourF <- as.factor(Bike2$Hour)
-Bike2$Weekday <- weekdays(Bike2$Date)
-Bike2$WeekdayF <- as.factor(Bike2$Weekday)
-Bike2$Month <- as.numeric(format(Bike2$Date, "%m"))
-Bike2$Season <- ifelse(Bike2$Month %in% c(3,4,5), "spring",
-                       ifelse(Bike2$Month %in% c(6,7,8), "summer",
-                              ifelse(Bike2$Month %in% c(9,10,11), "fall", "winter")))
+# 2. 변수 제거 및 파생
+Bike2 <- subset(SeoulBike, select = -c(Dew, FunctioningDay))
+Bike2$HourF <- factor(Bike2$Hour)
+Bike2$Month <- as.factor(format(Bike2$Date, "%m"))
+Bike2$Weekday <- as.factor(weekdays(Bike2$Date))
+Bike2$MonthNum <- as.numeric(format(Bike2$Date, "%m"))
+Bike2$Season <- ifelse(Bike2$MonthNum %in% c(3,4,5), "spring",
+                       ifelse(Bike2$MonthNum %in% c(6,7,8), "summer",
+                              ifelse(Bike2$MonthNum %in% c(9,10,11), "fall", "winter")))
 Bike2$SeasonF <- as.factor(Bike2$Season)
 
-# 1. 상호작용 포함 모델 학습
-lm_interaction_model <- lm(
-  Rented ~ Temp + I(Temp^2) +
-    Humidity + I(Humidity^2) +
-    Rain + Holiday +
-    HourF + Temp:HourF +
-    SeasonF + WeekdayF +
-    Rain:HourF + Holiday:WeekdayF + Humidity:SeasonF,
+# 3. RushHour 생성
+day_names <- weekdays(Bike2$Date)
+if (all(grepl("[가-힣]", day_names))) {
+  work_days <- c("월요일", "화요일", "수요일", "목요일", "금요일")
+} else {
+  Sys.setlocale("LC_TIME", "C")
+  Bike2$Weekday <- weekdays(Bike2$Date)
+  work_days <- c("Monday", "Tuesday", "Wednesday", "Thursday", "Friday")
+}
+Bike2$Holiday <- ifelse(Bike2$Holiday %in% c(0, "No", "N", "0", FALSE), "No", "Yes")
+Bike2$RushHour <- with(Bike2, ifelse(Holiday == "No" & Weekday %in% work_days & Hour >= 7 & Hour <= 9, "Yes", "No"))
+Bike2$RushHour <- factor(Bike2$RushHour)
+
+# 4. 로그 변환
+Bike2$Solar_log <- log1p(as.numeric(Bike2$Solar))
+Bike2$Rain_log <- log1p(as.numeric(Bike2$Rain))
+Bike2$Snow_log <- log1p(as.numeric(Bike2$Snow))
+Bike2$Vis_diff_log <- log1p(2000 - as.numeric(Bike2$Visibility))
+Bike2 <- subset(Bike2, select = -c(Solar, Rain, Snow, Visibility))
+
+# 5. 최종 모델 구성 (전체)
+lm_final <- lm(
+  Rented ~ Temp + I(Temp^2) + Humidity + I(Humidity^2) + WindSp +
+    Solar_log + Rain_log + Snow_log + Vis_diff_log +
+    Holiday + HourF + Temp:HourF + Vis_diff_log:HourF +
+    Rain_log:Holiday + Month + Weekday + SeasonF + RushHour +
+    Rain_log:HourF + Holiday:Weekday + Humidity:SeasonF +
+    RushHour:Rain_log + RushHour:Temp + WindSp:HourF,
   data = Bike2
 )
 
-# 2. 성능 평가 (전체 데이터 기준)
-Bike2$pred_interaction <- predict(lm_interaction_model, Bike2)
-rmse_interaction <- sqrt(mean((Bike2$Rented - Bike2$pred_interaction)^2))
-r2_interaction <- summary(lm_interaction_model)$r.squared
-adj_r2_interaction <- summary(lm_interaction_model)$adj.r.squared
+# 6. 평가
+Bike2$pred_final <- predict(lm_final, newdata = Bike2)
+cat("전체 RMSE:", round(sqrt(mean((Bike2$Rented - Bike2$pred_final)^2)), 2), "\n")
+cat("전체 R2:", round(summary(lm_final)$r.squared, 4), "\n")
+cat("전체 Adjusted R²:", round(summary(lm_final)$adj.r.squared, 4), "\n")
 
-cat("[전체 데이터] RMSE:", round(rmse_interaction, 2), "\n")
-cat("[전체 데이터] R2:", round(r2_interaction, 4), "\n")
-cat("[전체 데이터] Adjusted R2:", round(adj_r2_interaction, 4), "\n")
-
-# 3. 이상치 제거 (Cook’s Distance 기반)
+# 7. Cook's Distance 이상치 제거
+lm_interaction_model <- lm(
+  Rented ~ Temp + I(Temp^2) + Humidity + I(Humidity^2) +
+    Rain_log + Holiday + HourF + Temp:HourF +
+    SeasonF + Weekday + Rain_log:HourF + Holiday:Weekday + Humidity:SeasonF,
+  data = Bike2
+)
 cooks_d <- cooks.distance(lm_interaction_model)
 threshold <- 4 / nrow(Bike2)
 Bike2_clean <- Bike2[cooks_d < threshold, ]
-
 cat("제거된 이상치 수:", nrow(Bike2) - nrow(Bike2_clean), "\n")
 
-# 4. 이상치 제거 후 동일 모델 재학습
-lm_interaction_clean <- lm(
-  Rented ~ Temp + I(Temp^2) +
-    Humidity + I(Humidity^2) +
-    Rain + Holiday +
-    HourF + Temp:HourF +
-    SeasonF + WeekdayF +
-    Rain:HourF + Holiday:WeekdayF + Humidity:SeasonF,
+# 8. 이상치 제거 후 모델 재학습
+lm_clean <- lm(
+  Rented ~ Temp + I(Temp^2) + Humidity + I(Humidity^2) + WindSp +
+    Solar_log + Rain_log + Snow_log + Vis_diff_log +
+    Holiday + HourF + Temp:HourF + Vis_diff_log:HourF +
+    Rain_log:Holiday + Month + Weekday + SeasonF + RushHour +
+    Rain_log:HourF + Holiday:Weekday + Humidity:SeasonF +
+    RushHour:Rain_log + RushHour:Temp + WindSp:HourF,
   data = Bike2_clean
 )
+Bike2_clean$pred_clean <- predict(lm_clean, newdata = Bike2_clean)
+cat("[이상치 제거] RMSE:", round(sqrt(mean((Bike2_clean$Rented - Bike2_clean$pred_clean)^2)), 2), "\n")
+cat("[이상치 제거] R2:", round(summary(lm_clean)$r.squared, 4), "\n")
+cat("[이상치 제거] Adjusted R2:", round(summary(lm_clean)$adj.r.squared, 4), "\n")
 
-# 5. 성능 재평가 (이상치 제거 후)
-Bike2_clean$pred_clean <- predict(lm_interaction_clean, Bike2_clean)
-rmse_clean <- sqrt(mean((Bike2_clean$Rented - Bike2_clean$pred_clean)^2))
-r2_clean <- summary(lm_interaction_clean)$r.squared
-adj_r2_clean <- summary(lm_interaction_clean)$adj.r.squared
-
-cat("[이상치 제거] RMSE:", round(rmse_clean, 2), "\n")
-cat("[이상치 제거] R2:", round(r2_clean, 4), "\n")
-cat("[이상치 제거] Adjusted R2:", round(adj_r2_clean, 4), "\n")
-
-# 6. 시각화
-library(ggplot2)
+# 9. 시각화
 ggplot(Bike2_clean, aes(x = Rented, y = pred_clean)) +
   geom_point(alpha = 0.4, color = "steelblue") +
   geom_abline(slope = 1, intercept = 0, color = "red") +
