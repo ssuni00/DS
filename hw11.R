@@ -177,7 +177,7 @@ ggplot(Bike2_clean, aes(x = Rented, y = pred_clean)) +
   geom_point(alpha = 0.4, color = "steelblue") +
   geom_abline(slope = 1, intercept = 0, color = "red") +
   labs(
-    title = "이상치 제거 후: 실제 대여량 vs 예측 대여량",
-    x = "실제 대여량",
-    y = "예측 대여량"
+    title = "after lm_interaction_clean: actual vs pred",
+    x = "actual",
+    y = "pred"
   )
