@@ -47,15 +47,15 @@ Bike2 <- subset(SeoulBike, select = -c(Dew, FunctioningDay))
 str(Bike2)
 
 ## 6. 연구 가설 세우기 (Question 6)
-# Temp (+): 적절한 온도 상승 -> 대여량 증가
-# Humidity (-): 습도 상승 -> 대여량 감소
-# WindSp (-): 풍속 증가 -> 대여량 감소
-# Visibility (+): 가시거리 증가 -> 대여량 증가
-# Solar (+): 일사량 증가 -> 대여량 증가
-# Rain (-): 비 증가 -> 대여량 감소
-# Snow (-): 눈 증가 -> 대여량 감소
-# Hour: 출퇴근 시간대(7-9시, 17-19시) -> 대여량 증가
-# Holiday (+): 공휴일 -> 대여량 증가 예상
+# Temp (+): 온도 상승 → 대여량 증가
+# Humidity (-): 습도 상승 → 대여량 감소
+# WindSp (-): 풍속 증가 → 대여량 감소
+# Visibility (+): 가시거리 증가 → 대여량 증가
+# Solar (+): 일사량 증가 → 대여량 증가
+# Rain (-): 비 증가 → 대여량 감소
+# Snow (-): 눈 증가 → 대여량 감소
+# Hour: 출퇴근 시간대(7-9시, 17-19시) → 대여량 증가
+# Holiday (+): 공휴일 → 대여량 증가 예상
 
 ## 7. 다중선형회귀모델 적합 (Question 7)
 lm_model <- lm(
@@ -86,12 +86,12 @@ ggplot(Bike2, aes(x = Rented, y = pred)) +
   geom_point(alpha = 0.4) +
   geom_abline(slope = 1, intercept = 0, color = "red") +
   labs(
-    title = "실제 대여량 vs 예측 대여량",
-    x = "실제 대여량",
-    y = "예측 대여량"
+    title = "actual vs pred",
+    x = "actual",
+    y = "pred"
   )
+## 10. 중간평가 및 해석 (수정 버전)
 
-## 10. 중간평가 및 해석 (Question 10)
 # (1) 변수별 해석
 # - Temp(양의 관계): 온도가 올라가면 대여량 증가
 # - Rain(음의 관계): 비가 오면 대여량 감소
@@ -100,31 +100,34 @@ ggplot(Bike2, aes(x = Rented, y = pred)) +
 # - Holiday(양의 관계): 공휴일 대여량 증가
 
 # (2) 모델 전체 평가
-# Adjusted R²가 약 0.62 수준이면 매우 양호한 수준임.
-# RMSE 값이 작을수록 실제값과 예측값 간 오차가 적은 것을 의미(약 380~420 수준으로 적절)
+# - Adjusted R²는 약 0.47 수준으로, 전체 변동의 절반 미만만 설명
+# - 이는 계절성, 요일, 비선형 패턴 등이 포함되지 않아 생긴 한계임
+# - RMSE는 약 450~470 수준으로, 다소 높은 편
 
 # (3) 결론 및 추가 분석 제안
 # 계절성(요일, 월 등 날짜 변수)을 추가하면 성능이 더 개선될 수 있음.
 # 다항항(Temp^2 등), 교호작용(Temp*Hour 등)을 추가하면 추가 성능 향상 가능.
 # 잔차분석을 통한 정규성, 등분산성 진단이 권장됨.
 
-# Question 11
-# 1) Hour를 범주형 변수로 변환 (시간대별 차별화 효과 반영)
+## 11. 성능 향상 모델 구축 (Question 11 – 개선 모델)
+
+# (1) Hour를 범주형 변수로 변환
 Bike2$HourF <- factor(Bike2$Hour)
 
-# 2) 비선형성 및 교호작용 효과 반영한 다중회귀모델 적합
+# (2) 월(Month), 요일(Weekday) 변수 추가 (계절성 반영)
+Bike2$Month <- as.factor(format(SeoulBike$Date, "%m"))
+Bike2$Weekday <- as.factor(weekdays(SeoulBike$Date))
+
+# (3) 개선된 회귀 모델 적합 (비선형항 + 교호작용 + 월/요일)
 lm_model2 <- lm(
-  Rented ~ Temp + I(Temp^2) + Humidity + I(Humidity^2) + WindSp + Visibility + Solar + Rain + Snow + Holiday +
-    HourF + Temp:HourF,
+  Rented ~ Temp + I(Temp^2) + Humidity + I(Humidity^2) +
+    WindSp + Visibility + Solar + Rain + Snow + Holiday +
+    HourF + Temp:HourF + Visibility:HourF + Rain:Holiday +
+    Month + Weekday,
   data = Bike2
 )
 
-summary(lm_model2)
-
-# 3) 다중공선성 확인
-vif(lm_model2, type = "predictor")
-
-# 4) 예측값 생성 및 모델 성능 평가
+# (4) 모델 성능 평가
 Bike2$pred2 <- predict(lm_model2, Bike2)
 rmse2 <- sqrt(mean((Bike2$Rented - Bike2$pred2)^2))
 r2_2 <- summary(lm_model2)$r.squared
@@ -134,13 +137,19 @@ cat("개선 모델 RMSE:", round(rmse2, 2), "\n")
 cat("개선 모델 R2:", round(r2_2, 4), "\n")
 cat("개선 모델 Adjusted R2:", round(adj_r2_2, 4), "\n")
 
-# 5) 시각화: 실제값 vs 예측값
+# (5) 다중공선성 확인
+library(car)
+vif_values2 <- vif(lm_model2, type = "predictor")
+print(vif_values2)
+
+
+# (6) 시각화: 실제 대여량 vs 예측 대여량
 library(ggplot2)
 ggplot(Bike2, aes(x = Rented, y = pred2)) +
   geom_point(alpha = 0.4) +
   geom_abline(slope = 1, intercept = 0, color = "blue") +
   labs(
-    title = "개선된 모델: 실제 대여량 vs 예측 대여량",
+    title = "개선 모델: 실제 대여량 vs 예측 대여량",
     x = "실제 대여량",
     y = "예측 대여량"
   )
