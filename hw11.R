@@ -110,69 +110,74 @@ ggplot(Bike2, aes(x = Rented, y = pred)) +
 # 잔차분석을 통한 정규성, 등분산성 진단이 권장됨.
 
 ## 11. 성능 향상 모델 구축 (Question 11 – 개선 모델)
+# Question 11 (업데이트 버전)
 
-# (1) Hour를 범주형 변수로 변환
-Bike2$HourF <- factor(Bike2$Hour)
-
-# (2) 월(Month), 요일(Weekday) 변수 추가 (계절성 반영)
-Bike2$Month <- as.factor(format(SeoulBike$Date, "%m"))
-Bike2$Weekday <- as.factor(weekdays(SeoulBike$Date))
-
-# (3) 분석에 사용할 데이터 구성
-Bike2 <- subset(SeoulBike, select = -c(Dew, FunctioningDay))
-
-# (4) 시간, 월, 요일 변수 생성
-Bike2$HourF <- factor(Bike2$Hour)
-Bike2$Month <- as.factor(format(SeoulBike$Date, "%m"))
-Bike2$Weekday <- as.factor(weekdays(SeoulBike$Date))
-
-# (5) 계절 변수 생성
-Bike2$MonthNum <- as.numeric(format(SeoulBike$Date, "%m"))
-Bike2$Season <- ifelse(Bike2$MonthNum %in% c(3,4,5), "spring",
-                       ifelse(Bike2$MonthNum %in% c(6,7,8), "summer",
-                              ifelse(Bike2$MonthNum %in% c(9,10,11), "fall", "winter")))
+# 0. 파생 변수 생성
+Bike2$HourF <- as.factor(Bike2$Hour)
+Bike2$Weekday <- weekdays(Bike2$Date)
+Bike2$WeekdayF <- as.factor(Bike2$Weekday)
+Bike2$Month <- as.numeric(format(Bike2$Date, "%m"))
+Bike2$Season <- ifelse(Bike2$Month %in% c(3,4,5), "spring",
+                       ifelse(Bike2$Month %in% c(6,7,8), "summer",
+                              ifelse(Bike2$Month %in% c(9,10,11), "fall", "winter")))
 Bike2$SeasonF <- as.factor(Bike2$Season)
 
-# (6) 출근 시간대 변수 생성
-Sys.setlocale("LC_TIME", "C")  # 요일 영어로 변환
-Bike2$Weekday <- weekdays(Bike2$Date)
-work_days <- c("Monday", "Tuesday", "Wednesday", "Thursday", "Friday")
-Bike2$Holiday <- ifelse(Bike2$Holiday == 0, "No", "Yes")
-Bike2$RushHour <- with(Bike2, ifelse(
-  Holiday == "No" & Weekday %in% work_days & Hour >= 7 & Hour <= 9,
-  "Yes", "No"))
-Bike2$RushHour <- factor(Bike2$RushHour)
-
-# (7) 개선된 회귀 모델 적합 (비선형항 + 교호작용 + 계절/요일/출근시간 포함)
-lm_model3 <- lm(
-  Rented ~ Temp + I(Temp^2) + Humidity + I(Humidity^2) +
-    WindSp + Visibility + Solar + Rain + Snow + Holiday +
-    HourF + Temp:HourF + Visibility:HourF + Rain:Holiday +
-    Month + Weekday + SeasonF + RushHour +
-    Rain:HourF + Holiday:Weekday + Humidity:SeasonF,
+# 1. 상호작용 포함 모델 학습
+lm_interaction_model <- lm(
+  Rented ~ Temp + I(Temp^2) +
+    Humidity + I(Humidity^2) +
+    Rain + Holiday +
+    HourF + Temp:HourF +
+    SeasonF + WeekdayF +
+    Rain:HourF + Holiday:WeekdayF + Humidity:SeasonF,
   data = Bike2
 )
 
-# (8) 모델 성능 평가
-Bike2$pred3 <- predict(lm_model3, Bike2)
-rmse3 <- sqrt(mean((Bike2$Rented - Bike2$pred3)^2))
-r2_3 <- summary(lm_model3)$r.squared
-adj_r2_3 <- summary(lm_model3)$adj.r.squared
+# 2. 성능 평가 (전체 데이터 기준)
+Bike2$pred_interaction <- predict(lm_interaction_model, Bike2)
+rmse_interaction <- sqrt(mean((Bike2$Rented - Bike2$pred_interaction)^2))
+r2_interaction <- summary(lm_interaction_model)$r.squared
+adj_r2_interaction <- summary(lm_interaction_model)$adj.r.squared
 
-cat("최종 모델 RMSE:", round(rmse3, 2), "\n")
-cat("최종 모델 R²:", round(r2_3, 4), "\n")
-cat("최종 모델 Adjusted R²:", round(adj_r2_3, 4), "\n")
+cat("[전체 데이터] RMSE:", round(rmse_interaction, 2), "\n")
+cat("[전체 데이터] R2:", round(r2_interaction, 4), "\n")
+cat("[전체 데이터] Adjusted R2:", round(adj_r2_interaction, 4), "\n")
 
-# (9) 다중공선성 확인
-vif_values3 <- vif(lm_model3)
-print(vif_values3)
+# 3. 이상치 제거 (Cook’s Distance 기반)
+cooks_d <- cooks.distance(lm_interaction_model)
+threshold <- 4 / nrow(Bike2)
+Bike2_clean <- Bike2[cooks_d < threshold, ]
 
-# (10) 시각화: 실제 대여량 vs 예측 대여량
-ggplot(Bike2, aes(x = Rented, y = pred3)) +
-  geom_point(alpha = 0.4) +
-  geom_abline(slope = 1, intercept = 0, color = "purple") +
+cat("제거된 이상치 수:", nrow(Bike2) - nrow(Bike2_clean), "\n")
+
+# 4. 이상치 제거 후 동일 모델 재학습
+lm_interaction_clean <- lm(
+  Rented ~ Temp + I(Temp^2) +
+    Humidity + I(Humidity^2) +
+    Rain + Holiday +
+    HourF + Temp:HourF +
+    SeasonF + WeekdayF +
+    Rain:HourF + Holiday:WeekdayF + Humidity:SeasonF,
+  data = Bike2_clean
+)
+
+# 5. 성능 재평가 (이상치 제거 후)
+Bike2_clean$pred_clean <- predict(lm_interaction_clean, Bike2_clean)
+rmse_clean <- sqrt(mean((Bike2_clean$Rented - Bike2_clean$pred_clean)^2))
+r2_clean <- summary(lm_interaction_clean)$r.squared
+adj_r2_clean <- summary(lm_interaction_clean)$adj.r.squared
+
+cat("[이상치 제거] RMSE:", round(rmse_clean, 2), "\n")
+cat("[이상치 제거] R2:", round(r2_clean, 4), "\n")
+cat("[이상치 제거] Adjusted R2:", round(adj_r2_clean, 4), "\n")
+
+# 6. 시각화
+library(ggplot2)
+ggplot(Bike2_clean, aes(x = Rented, y = pred_clean)) +
+  geom_point(alpha = 0.4, color = "steelblue") +
+  geom_abline(slope = 1, intercept = 0, color = "red") +
   labs(
-    title = "최종 모델: 실제 대여량 vs 예측 대여량",
+    title = "이상치 제거 후: 실제 대여량 vs 예측 대여량",
     x = "실제 대여량",
     y = "예측 대여량"
   )
