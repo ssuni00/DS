@@ -109,7 +109,7 @@ ggplot(Bike2, aes(x = Rented, y = pred)) +
 # 다항항(Temp^2 등), 교호작용(Temp*Hour 등)을 추가하면 추가 성능 향상 가능.
 # 잔차분석을 통한 정규성, 등분산성 진단이 권장됨.
 
-## 11. 성능 향상 모델 구축 (Question 11 – 개선 모델)
+## 11. 성능 향상 모델 구축 (비선형성 + 상호작용 다수 포함)
 # 2. 변수 제거 및 파생
 Bike2 <- subset(SeoulBike, select = -c(Dew, FunctioningDay))
 Bike2$HourF <- factor(Bike2$Hour)
@@ -121,7 +121,15 @@ Bike2$Season <- ifelse(Bike2$MonthNum %in% c(3,4,5), "spring",
                               ifelse(Bike2$MonthNum %in% c(9,10,11), "fall", "winter")))
 Bike2$SeasonF <- as.factor(Bike2$Season)
 
-# 3. RushHour 생성
+# 3. 날짜 기반 파생 변수 추가
+Bike2$Weekend <- ifelse(Bike2$Weekday %in% c("Saturday", "Sunday", "토요일", "일요일"), "Yes", "No")
+Bike2$Weekend <- as.factor(Bike2$Weekend)
+Bike2$Quarter <- quarters(Bike2$Date)
+Bike2$Quarter <- as.factor(Bike2$Quarter)
+Bike2$IsHolidayWeekend <- ifelse(Bike2$Holiday == 1 | Bike2$Weekend == "Yes", "Yes", "No")
+Bike2$IsHolidayWeekend <- as.factor(Bike2$IsHolidayWeekend)
+
+# 4. RushHour 생성
 day_names <- weekdays(Bike2$Date)
 if (all(grepl("[가-힣]", day_names))) {
   work_days <- c("월요일", "화요일", "수요일", "목요일", "금요일")
@@ -134,58 +142,57 @@ Bike2$Holiday <- ifelse(Bike2$Holiday %in% c(0, "No", "N", "0", FALSE), "No", "Y
 Bike2$RushHour <- with(Bike2, ifelse(Holiday == "No" & Weekday %in% work_days & Hour >= 7 & Hour <= 9, "Yes", "No"))
 Bike2$RushHour <- factor(Bike2$RushHour)
 
-# 4. 로그 변환
+# 5. 로그 변환
 Bike2$Solar_log <- log1p(as.numeric(Bike2$Solar))
 Bike2$Rain_log <- log1p(as.numeric(Bike2$Rain))
 Bike2$Snow_log <- log1p(as.numeric(Bike2$Snow))
 Bike2$Vis_diff_log <- log1p(2000 - as.numeric(Bike2$Visibility))
 Bike2 <- subset(Bike2, select = -c(Solar, Rain, Snow, Visibility))
 
-# 5. 최종 모델 구성 (전체)
+# 6. 최종 모델 구성 (전체)
 lm_final <- lm(
   Rented ~ Temp + I(Temp^2) + Humidity + I(Humidity^2) + WindSp +
     Solar_log + Rain_log + Snow_log + Vis_diff_log +
     Holiday + HourF + Temp:HourF + Vis_diff_log:HourF +
     Rain_log:Holiday + Month + Weekday + SeasonF + RushHour +
     Rain_log:HourF + Holiday:Weekday + Humidity:SeasonF +
-    RushHour:Rain_log + RushHour:Temp + WindSp:HourF,
+    RushHour:Rain_log + RushHour:Temp + WindSp:HourF +
+    Weekend + Quarter + IsHolidayWeekend +
+    Weekend:HourF + IsHolidayWeekend:Rain_log,
   data = Bike2
 )
 
-# 6. 평가
+# 7. 평가
 Bike2$pred_final <- predict(lm_final, newdata = Bike2)
 cat("전체 RMSE:", round(sqrt(mean((Bike2$Rented - Bike2$pred_final)^2)), 2), "\n")
 cat("전체 R2:", round(summary(lm_final)$r.squared, 4), "\n")
-cat("전체 Adjusted R²:", round(summary(lm_final)$adj.r.squared, 4), "\n")
+cat("전체 Adjusted R2:", round(summary(lm_final)$adj.r.squared, 4), "\n")
 
-# 7. Cook's Distance 이상치 제거
-lm_interaction_model <- lm(
-  Rented ~ Temp + I(Temp^2) + Humidity + I(Humidity^2) +
-    Rain_log + Holiday + HourF + Temp:HourF +
-    SeasonF + Weekday + Rain_log:HourF + Holiday:Weekday + Humidity:SeasonF,
-  data = Bike2
-)
-cooks_d <- cooks.distance(lm_interaction_model)
+# 8. 이상치 제거 (Cook's Distance 기준)
+cooks_d <- cooks.distance(lm_final)
 threshold <- 4 / nrow(Bike2)
 Bike2_clean <- Bike2[cooks_d < threshold, ]
 cat("제거된 이상치 수:", nrow(Bike2) - nrow(Bike2_clean), "\n")
 
-# 8. 이상치 제거 후 모델 재학습
+# 9. 이상치 제거 후 모델 재학습
 lm_clean <- lm(
   Rented ~ Temp + I(Temp^2) + Humidity + I(Humidity^2) + WindSp +
     Solar_log + Rain_log + Snow_log + Vis_diff_log +
     Holiday + HourF + Temp:HourF + Vis_diff_log:HourF +
     Rain_log:Holiday + Month + Weekday + SeasonF + RushHour +
     Rain_log:HourF + Holiday:Weekday + Humidity:SeasonF +
-    RushHour:Rain_log + RushHour:Temp + WindSp:HourF,
+    RushHour:Rain_log + RushHour:Temp + WindSp:HourF +
+    Weekend + Quarter + IsHolidayWeekend +
+    Weekend:HourF + IsHolidayWeekend:Rain_log,
   data = Bike2_clean
 )
+
 Bike2_clean$pred_clean <- predict(lm_clean, newdata = Bike2_clean)
 cat("[이상치 제거] RMSE:", round(sqrt(mean((Bike2_clean$Rented - Bike2_clean$pred_clean)^2)), 2), "\n")
 cat("[이상치 제거] R2:", round(summary(lm_clean)$r.squared, 4), "\n")
 cat("[이상치 제거] Adjusted R2:", round(summary(lm_clean)$adj.r.squared, 4), "\n")
 
-# 9. 시각화
+# 10. 시각화
 ggplot(Bike2_clean, aes(x = Rented, y = pred_clean)) +
   geom_point(alpha = 0.4, color = "steelblue") +
   geom_abline(slope = 1, intercept = 0, color = "red") +
